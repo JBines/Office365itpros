@@ -10,29 +10,31 @@ Write-Host "Retrieving information about users holding Microsoft 365 administrat
 $AdminRoleHolders = [System.Collections.Generic.List[Object]]::new() 
 [array]$AdminRoles = Get-MgDirectoryRole | Select-Object DisplayName, Id | Sort-Object DisplayName
 ForEach ($Role in $AdminRoles) {
-    [array]$RoleMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $Role.Id | ? {$_.AdditionalProperties."@odata.type" -eq "#microsoft.graph.user"}
-    ForEach ($Member in $RoleMembers) {
-      $UserDetails = Get-MgUser -UserId $Member.Id
+    [array]$RoleMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $Role.Id
+    $RoleDirectMembers = $RoleMembers | Where-Object {$_.AdditionalProperties."@odata.type" -eq "#microsoft.graph.user"}
+    $RoleGroupMembers = $RoleMembers | Where-Object {$_.AdditionalProperties."@odata.type" -eq "#microsoft.graph.group"}
+
+    ForEach ($Member in $RoleDirectMembers) {
+      #$UserDetails = Get-MgUser -UserId $Member.Id
       $ReportLine  = [PSCustomObject] @{   
-         User   = $UserDetails.UserPrincipalName
-         Id     = $UserDetails.Id
+         User   = $Member.AdditionalProperties."userPrincipalName"
+         Id     = $Member.Id
+         Type = "Direct"
          Role   = $Role.DisplayName
          RoleId = $Role.Id }
      $AdminRoleHolders.Add($ReportLine) }
-}
-$AdminRoleHolders = $AdminRoleHolders | Sort User
-$Unique = $AdminRoleHolders | Sort-Object User -Unique
 
-# Create a slightly different report where each user has their assigned roles in one record
-$UniqueAdminRoleHolders = [System.Collections.Generic.List[Object]]::new() 
-   ForEach($User in $Unique) {
-     $Records = $AdminRoleHolders | Where-Object {$_.id -eq $User.Id}
-     $AdminRoles = $Records.Role -join ", "
-     $ReportLine  = [PSCustomObject] @{  
-        Id      = $User.Id 
-        User    = $User.User
-        Roles   = $AdminRoles }
-    $UniqueAdminRoleHolders.Add($ReportLine)
+    ForEach ($Group in $RoleGroupMembers) {
+    $GroupMembers = Get-MgGroupMember -GroupId $Group.id
+      ForEach($UserDetails in $GroupMembers){
+        $ReportLine  = [PSCustomObject] @{   
+          User   = $UserDetails.AdditionalProperties."userPrincipalName"
+          Id     = $UserDetails.Id
+          Type = "RoleGroup"
+          Role   = $Role.DisplayName
+          RoleId = $Role.Id }
+        $AdminRoleHolders.Add($ReportLine)}
+    }
 }
 Write-Host ("There are {0} user accounts holding Microsoft 365 administrative roles." -f $UniqueAdminRoleHolders.count)
 
